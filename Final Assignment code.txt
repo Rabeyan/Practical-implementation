@@ -1,0 +1,40 @@
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import VectorAssembler, StandardScaler
+from pyspark.ml.regression import RandomForestRegressor
+from pyspark.ml import Pipeline
+from pyspark.ml.evaluation import RegressionEvaluator
+
+# 1. Initialize Spark session
+spark = SparkSession.builder \
+    .appName("BoneAgePredictionPipeline") \
+    .enableHiveSupport() \
+    .getOrCreate()
+
+# 2. Load CSV metadata file
+df = spark.read.csv("/boneage/metadata.csv", header=True, inferSchema=True)
+df = df.na.drop()
+
+# 3. Convert gender column to numeric
+df = df.withColumn("gender", df["male"].cast("integer"))
+
+# 4. Assemble and scale features
+assembler = VectorAssembler(inputCols=["gender"], outputCol="features")
+scaler = StandardScaler(inputCol="features", outputCol="scaledFeatures")
+
+# 5. Define Random Forest Regressor
+rf = RandomForestRegressor(featuresCol="scaledFeatures", labelCol="boneage", numTrees=50)
+
+# 6. Build and run pipeline
+pipeline = Pipeline(stages=[assembler, scaler, rf])
+model = pipeline.fit(df)
+
+# 7. Predictions and Evaluation
+predictions = model.transform(df)
+evaluator = RegressionEvaluator(labelCol="boneage", predictionCol="prediction", metricName="rmse")
+rmse = evaluator.evaluate(predictions)
+
+evaluator.setMetricName("r2")
+r2 = evaluator.evaluate(predictions)
+
+print(f"RMSE: {rmse:.2f}")
+print(f"R² Score: {r2:.2f}")
